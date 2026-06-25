@@ -1,0 +1,50 @@
+industries:
+  - name: 泛科技与前沿创新
+    keywords: ["AI", "Semiconductor", "Robotics", "Quantum", "SaaS", "Big Tech", "Hardware", "Startup"]
+
+importance_criteria: |
+  请对这篇科技产业新闻进行“双维打分”（硬核创新 vs 流量舆情）：
+  
+  维度一：硬核创新分 (Innovation Score，0-10分)
+  衡量底层技术、长远商业价值和颠覆性。
+  - 8-10分：核心技术的重大跃进（如顶级AI模型、芯片架构流片）、证明了全新的科技盈利模式、重大的产业并购或顶级科学家跳槽。
+  
+  维度二：流量与舆情分 (Traffic & Hype Score，0-10分)
+  衡量消费者狂热度、社交媒体热度和资本短期情绪。
+  - 8-10分：巨头间的抓马(Drama)事件、全网热议的爆款数码产品发布、现象级但可能短暂的流量风口、引发大众广泛讨论的政策（如针对某APP的封杀）。
+
+rss_feeds:
+  # 顶级创投内参 & 黑客前沿
+  - "https://www.theinformation.com/feed"  # The Information
+  - "https://hnrss.org/frontpage?points=100" # Hacker News Top 100
+  - "https://www.technologyreview.com/feed/" # MIT科技评论
+  
+  # 全球顶级科技媒体 & 商业巨头动态
+  - "https://techcrunch.com/category/artificial-intelligence/feed/" # TechCrunch AI
+  - "https://techcrunch.com/category/startups/feed/" # TechCrunch Startups
+  - "https://techcrunch.com/category/venture/feed/" # TechCrunch VC
+  - "https://feeds.feedburner.com/venturebeat/SpiZ" # VentureBeat (深度关注AI与企服)
+  - "https://www.wired.com/feed/rss" # Wired 连线杂志
+  - "https://www.cnbc.com/id/19854910/device/rss/rss.html" # CNBC 科技财经
+  - "https://siliconangle.com/feed/" # SiliconANGLE (硬核企业级科技/云/芯片)
+  - "https://feeds.arstechnica.com/arstechnica/technology-lab" # Ars Technica
+  
+  # 中国本土顶级科技商业与AI媒体
+  - "https://36kr.com/feed" # 36氪
+  - "https://www.huxiu.com/rss/0.xml" # 虎嗅
+  - "https://www.geekpark.net/rss" # 极客公园
+  - "https://www.jiqizhixin.com/rss" # 机器之心 (中国最硬核的AI媒体)
+
+output:
+  format: "markdown"
+  language: "Chinese"
+  min_score_to_keep: 8 # 任一维度达到 8 分即保留
+  hours_back: 48 # 过去48小时
+  model: "gpt-5.4" # 默认使用 openai 模型
+
+delivery:
+  enabled: true
+  sender_email: "edger3303@icloud.com" # 填写你的 iCloud 邮箱地址
+  recipient_email: "edger330@foxmail.com"      # 接收报告的邮箱
+  smtp_server: "smtp.mail.me.com"
+  smtp_port: 587
