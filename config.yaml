@@ -41,7 +41,7 @@ output:
   language: "Chinese"
   min_score_to_keep: 8 # 任一维度达到 8 分即保留
   hours_back: 48 # 过去48小时
-  model: "gemini-2.5-flash" # 默认使用 Gemini Flash 进行高速初筛
+  model: "gemini-1.5-flash" # 默认使用 Gemini Flash 进行高速初筛
 
 delivery:
   enabled: true

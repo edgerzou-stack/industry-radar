@@ -139,7 +139,7 @@ def deduplicate_articles(articles, config):
     {json.dumps(payload, ensure_ascii=False)}
     """
     
-    model_name = "gemini-2.5-flash"
+    model_name = "gemini-1.5-flash"
     
     try:
         response = client.models.generate_content(

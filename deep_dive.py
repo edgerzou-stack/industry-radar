@@ -59,7 +59,7 @@ def find_primary_source(full_text, links, original_url, config):
     """
     try:
         response = client.models.generate_content(
-            model=config.get('output', {}).get('model', 'gemini-2.5-flash'), 
+            model=config.get('output', {}).get('model', 'gemini-1.5-flash'), 
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -121,7 +121,7 @@ def generate_deep_dive_report(article, config):
     try:
         full_prompt = "You are a professional VC analyst.\n\n" + prompt
         response = client.models.generate_content(
-            model="gemini-2.5-pro", # Force the most powerful model
+            model="gemini-1.5-pro", # Force the most powerful model
             contents=full_prompt,
             config=genai.types.GenerateContentConfig(
                 temperature=0.3,
