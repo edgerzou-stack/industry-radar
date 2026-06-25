@@ -40,11 +40,19 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
     supernova = []
     hardcore = []
     hype = []
+    deep_dives = []
     
     for a in high_scoring:
         sd = a.get('score_data', {})
         i_score = sd.get('innovation_score', 0)
         t_score = sd.get('traffic_score', 0)
+        
+        if i_score >= 9 or t_score >= 9:
+            from deep_dive import generate_deep_dive_report
+            dd = generate_deep_dive_report(a, config)
+            if dd:
+                a['deep_dive'] = dd
+                deep_dives.append(a)
         
         if i_score >= min_score and t_score >= min_score:
             supernova.append(a)
@@ -77,6 +85,16 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
             f.write("今天没有任何新闻达到你设置的超高标准 (全板块 8 分以下)。\n\n_真正的结构性大机会不会每天都有，享受这片刻的宁静吧。_\n")
             return report_path
             
+        if deep_dives:
+            f.write("## 🤿 深度研报 (Deep Dive)\n_系统已自动溯源第一手官方资料，并由 AI 生成顶尖研报。_\n\n")
+            for a in deep_dives:
+                sd = a['score_data']
+                title = sd.get('translated_title', a['title'])
+                dd = a['deep_dive']
+                f.write(f"### [研报] {title}\n")
+                f.write(f"**溯源信源**: [点击查看官方原文]({dd['primary_url']})\n\n")
+                f.write(f"{dd['report_content']}\n\n---\n")
+                
         if supernova:
             f.write("## 🌟 顶流硬核 (Supernova)\n_兼具颠覆性技术价值与爆炸性市场流量的里程碑事件！_\n\n")
             for a in supernova:
