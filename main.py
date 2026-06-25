@@ -19,15 +19,30 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
     
     min_score = config.get("output", {}).get("min_score_to_keep", 8)
     
-    supernova = []
-    hardcore = []
-    hype = []
-    
+    high_scoring = []
     for a in scored_articles:
         sd = a.get('score_data', {})
         if not sd.get('is_relevant'):
             continue
             
+        i_score = sd.get('innovation_score', 0)
+        t_score = sd.get('traffic_score', 0)
+        
+        if i_score >= min_score or t_score >= min_score:
+            high_scoring.append(a)
+            
+    if high_scoring:
+        print(f"Deduplicating {len(high_scoring)} high-scoring articles...", flush=True)
+        from score import deduplicate_articles
+        high_scoring = deduplicate_articles(high_scoring, config)
+        print(f"After deduplication: {len(high_scoring)} articles remaining.", flush=True)
+
+    supernova = []
+    hardcore = []
+    hype = []
+    
+    for a in high_scoring:
+        sd = a.get('score_data', {})
         i_score = sd.get('innovation_score', 0)
         t_score = sd.get('traffic_score', 0)
         

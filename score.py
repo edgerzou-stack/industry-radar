@@ -82,3 +82,96 @@ def score_article(article, config):
                     continue
             print(f"Error scoring article '{article['title']}': {e}", flush=True)
             return {"innovation_score": 0, "traffic_score": 0, "justification": f"Error: {e}", "is_relevant": False, "translated_title": article['title'], "translated_summary": "Error"}
+
+def deduplicate_articles(articles, config):
+    if len(articles) <= 1:
+        return articles
+        
+    client = get_client()
+    if not client:
+        return articles
+        
+    payload = []
+    for idx, a in enumerate(articles):
+        sd = a.get('score_data', {})
+        payload.append({
+            "id": idx,
+            "title": sd.get('translated_title', a['title']),
+            "summary": sd.get('translated_summary', a['summary']),
+            "source": a['source'],
+            "link": a['link'],
+            "published_at": a['published_at'],
+            "innovation_score": sd.get('innovation_score', 0),
+            "traffic_score": sd.get('traffic_score', 0),
+            "justification": sd.get('justification', '')
+        })
+        
+    prompt = f"""
+    You are an expert tech editor. Your task is to review the following top news articles and merge those that report on the EXACT SAME EVENT.
+    If multiple articles are about the same event/announcement, merge them into a single article.
+    If an article is unique, keep it as its own entry.
+    
+    When merging:
+    1. 'translated_title': Create a comprehensive title in {config.get('output', {}).get('language', 'Chinese')}.
+    2. 'translated_summary': Write a merged summary capturing all perspectives in {config.get('output', {}).get('language', 'Chinese')}.
+    3. 'innovation_score': Keep the MAX innovation_score among the merged articles.
+    4. 'traffic_score': Keep the MAX traffic_score among the merged articles.
+    5. 'justification': Combine the justifications.
+    6. 'source': Combine the sources (e.g. "TechCrunch, 36氪").
+    7. 'link': Provide a SINGLE primary URL (pick the best one, do NOT combine multiple URLs).
+    
+    Output strictly in JSON format matching this schema:
+    {{
+      "merged_articles": [
+        {{
+          "translated_title": string,
+          "translated_summary": string,
+          "innovation_score": integer,
+          "traffic_score": integer,
+          "justification": string,
+          "source": string,
+          "link": string,
+          "published_at": string
+        }}
+      ]
+    }}
+    
+    Input Articles JSON:
+    {json.dumps(payload, ensure_ascii=False)}
+    """
+    
+    model_name = "gpt-5.4"
+    
+    try:
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant designed to output JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+        )
+        result = json.loads(response.choices[0].message.content)
+        
+        final_articles = []
+        for ma in result.get("merged_articles", []):
+            final_articles.append({
+                "title": ma.get("translated_title", ""),
+                "summary": ma.get("translated_summary", ""),
+                "source": ma.get("source", ""),
+                "link": ma.get("link", ""),
+                "published_at": ma.get("published_at", ""),
+                "score_data": {
+                    "is_relevant": True,
+                    "innovation_score": ma.get("innovation_score", 0),
+                    "traffic_score": ma.get("traffic_score", 0),
+                    "justification": ma.get("justification", ""),
+                    "translated_title": ma.get("translated_title", ""),
+                    "translated_summary": ma.get("translated_summary", "")
+                }
+            })
+        return final_articles
+    except Exception as e:
+        print(f"Error deduplicating articles: {e}", flush=True)
+        return articles
