@@ -70,6 +70,7 @@ def score_article(article, config):
                 )
             )
             result = json.loads(response.text)
+            time.sleep(4.5) # 强制节流，适配 Gemini Free Tier 的 15 RPM 限制
             return result
         except Exception as e:
             err_msg = str(e).lower()
