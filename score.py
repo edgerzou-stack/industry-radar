@@ -115,7 +115,7 @@ def deduplicate_articles(articles, config):
     1. 'translated_title': Create a comprehensive title in {config.get('output', {}).get('language', 'Chinese')}.
     2. 'translated_summary': Write a merged summary capturing all perspectives in {config.get('output', {}).get('language', 'Chinese')}.
     3. 'innovation_score': Keep the MAX innovation_score among the merged articles.
-    4. 'traffic_score': Keep the MAX traffic_score among the merged articles.
+    4. 'traffic_score': Keep the MAX traffic_score among the merged articles. CRITICAL: If you are merging articles from MULTIPLE DIFFERENT sources, this indicates high cross-platform virality. Add +1 to the final traffic_score for every additional unique source beyond the first (up to a max of 10).
     5. 'justification': Combine the justifications.
     6. 'source': Combine the sources (e.g. "TechCrunch, 36氪").
     7. 'link': Provide a SINGLE primary URL (pick the best one, do NOT combine multiple URLs).
