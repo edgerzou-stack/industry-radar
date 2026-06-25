@@ -24,8 +24,16 @@ def fetch_full_text(url):
             
         return text[:20000], links
     except Exception as e:
-        print(f"Error fetching full text for {url}: {e}", flush=True)
-        return "", []
+        print(f"Standard fetch failed for {url}: {e}. Falling back to Jina Reader...", flush=True)
+        try:
+            jina_url = f"https://r.jina.ai/{url}"
+            jina_headers = {"X-Return-Format": "markdown"}
+            resp = requests.get(jina_url, headers=jina_headers, timeout=20)
+            resp.raise_for_status()
+            return resp.text[:20000], []
+        except Exception as jina_e:
+            print(f"Jina fetch failed for {url}: {jina_e}", flush=True)
+            return "", []
 
 def find_primary_source(full_text, links, original_url, config):
     client = get_client()
