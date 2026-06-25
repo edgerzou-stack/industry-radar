@@ -75,10 +75,10 @@ def score_article(article, config):
             return result
         except Exception as e:
             err_msg = str(e).lower()
-            if "429" in err_msg or "quota" in err_msg or "rate limit" in err_msg:
+            if "429" in err_msg or "quota" in err_msg or "rate limit" in err_msg or "time" in err_msg or "connect" in err_msg or "502" in err_msg or "503" in err_msg:
                 if attempt < max_retries - 1:
-                    print(f"Rate limited or Timeout. Waiting 5s before retry {attempt+1}/{max_retries}...", flush=True)
-                    time.sleep(5)
+                    print(f"Rate limited or Connection Error. Waiting 3s before retry {attempt+1}/{max_retries}... ({e})", flush=True)
+                    time.sleep(3)
                     continue
             print(f"Error scoring article '{article['title']}': {e}", flush=True)
             return {"innovation_score": 0, "traffic_score": 0, "justification": f"Error: {e}", "is_relevant": False, "translated_title": article['title'], "translated_summary": "Error"}
@@ -140,7 +140,7 @@ def deduplicate_articles(articles, config):
     {json.dumps(payload, ensure_ascii=False)}
     """
     
-    model_name = "gpt-5.4"
+    model_name = "gpt-4o-mini"
     
     try:
         response = client.chat.completions.create(
