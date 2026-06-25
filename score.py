@@ -3,7 +3,7 @@ import time
 import json
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from openai import OpenAI
+from google import genai
 
 load_dotenv()
 
@@ -16,11 +16,10 @@ class ArticleScore(BaseModel):
     translated_summary: str
 
 def get_client():
-    api_key = os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return None
-    return OpenAI(api_key=api_key, base_url=base_url, timeout=15.0)
+    return genai.Client(api_key=api_key)
 
 def score_article(article, config):
     client = get_client()
@@ -62,16 +61,15 @@ def score_article(article, config):
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            response = client.chat.completions.create(
+            response = client.models.generate_content(
                 model=model_name,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant designed to output JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.2,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2,
+                )
             )
-            result = json.loads(response.choices[0].message.content)
+            result = json.loads(response.text)
             return result
         except Exception as e:
             err_msg = str(e).lower()
@@ -140,19 +138,18 @@ def deduplicate_articles(articles, config):
     {json.dumps(payload, ensure_ascii=False)}
     """
     
-    model_name = "gpt-4o-mini"
+    model_name = "gemini-2.5-flash"
     
     try:
-        response = client.chat.completions.create(
+        response = client.models.generate_content(
             model=model_name,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant designed to output JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            )
         )
-        result = json.loads(response.choices[0].message.content)
+        result = json.loads(response.text)
         
         final_articles = []
         for ma in result.get("merged_articles", []):

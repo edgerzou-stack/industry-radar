@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 from score import get_client
+from google import genai
 import json
 
 def fetch_full_text(url):
@@ -57,16 +58,15 @@ def find_primary_source(full_text, links, original_url, config):
     }}
     """
     try:
-        response = client.chat.completions.create(
-            model=config.get('output', {}).get('model', 'gpt-4o-mini'), 
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant designed to output JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
+        response = client.models.generate_content(
+            model=config.get('output', {}).get('model', 'gemini-2.5-flash'), 
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            )
         )
-        result = json.loads(response.choices[0].message.content)
+        result = json.loads(response.text)
         found_url = result.get("primary_url", original_url)
         if not found_url.startswith("http"):
             return original_url
@@ -119,15 +119,15 @@ def generate_deep_dive_report(article, config):
     """
     
     try:
-        response = client.chat.completions.create(
-            model="gpt-5.4", # Force the most powerful model
-            messages=[
-                {"role": "system", "content": "You are a professional VC analyst."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
+        full_prompt = "You are a professional VC analyst.\n\n" + prompt
+        response = client.models.generate_content(
+            model="gemini-2.5-pro", # Force the most powerful model
+            contents=full_prompt,
+            config=genai.types.GenerateContentConfig(
+                temperature=0.3,
+            )
         )
-        report_content = response.choices[0].message.content
+        report_content = response.text
         return {
             "primary_url": primary_url,
             "report_content": report_content
