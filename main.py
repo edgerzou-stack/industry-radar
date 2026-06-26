@@ -94,14 +94,19 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
             return report_path
             
         if deep_dives:
-            f.write("## 🤿 深度研报 (Deep Dive)\n_系统已自动溯源第一手官方资料，并由 AI 生成顶尖研报。_\n\n")
-            for a in deep_dives:
+            f.write("## 🤿 深度研报 (Deep Dive)\n_系统已自动溯源第一手官方资料，由 AI 生成顶尖研报。点击链接可跳转至底部查看全文。_\n\n")
+            for idx, a in enumerate(deep_dives):
                 sd = a['score_data']
                 title = sd.get('translated_title', a['title'])
                 dd = a['deep_dive']
-                f.write(f"### [研报] {title}\n")
-                f.write(f"**溯源信源**: [点击查看官方原文]({dd['primary_url']})\n\n")
-                f.write(f"{dd['report_content']}\n\n---\n")
+                f.write(f"### [硬核:{sd.get('innovation_score', 0)} | 流量:{sd.get('traffic_score', 0)}] {title}\n")
+                if title != a['title'] and sd.get('translated_title'):
+                    f.write(f"*{a['title']}*\n\n")
+                f.write(f"**来源**: {a['source']} | **日期**: {a['published_at'][:10]}\n\n")
+                if sd.get('translated_summary'):
+                    f.write(f"**摘要**: {sd['translated_summary']}\n\n")
+                f.write(f"> **点评**: {sd['justification']}\n\n")
+                f.write(f"[👇 阅读 AI 深度研报全文](#deep-dive-report-{idx}) | [🌐 溯源官方原文]({dd['primary_url']})\n\n---\n")
                 
         if supernova:
             f.write("## 🌟 顶流硬核 (Supernova)\n_兼具颠覆性技术价值与爆炸性市场流量的里程碑事件！_\n\n")
@@ -117,6 +122,16 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
             f.write("## 📈 产业焦点与流量狂欢 (Traffic & Hype)\n_当前资本和大众的注意力焦点。可能是风口，也可能是抓马泡沫。_\n\n")
             for a in hype:
                 write_article_block(f, a)
+                
+        if deep_dives:
+            f.write("\n\n# ⬇️ 深度研报全文附录 (Deep Dive Appendix)\n\n")
+            for idx, a in enumerate(deep_dives):
+                dd = a['deep_dive']
+                title = a['score_data'].get('translated_title', a['title'])
+                f.write(f"<a id=\"deep-dive-report-{idx}\"></a>\n")
+                f.write(f"## {title} - 深度研报\n\n")
+                f.write(f"{dd['report_content']}\n\n")
+                f.write(f"---\n")
                 
     return report_path
 
