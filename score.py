@@ -150,6 +150,7 @@ def deduplicate_articles(articles, config):
             "summary": sd.get('translated_summary', a['summary']),
             "source": a['source'],
             "link": a['link'],
+            "published_at": a.get('published_at', ''),
             "innovation_score": sd.get('innovation_score', 0),
             "traffic_score": sd.get('traffic_score', 0)
         })
@@ -167,6 +168,7 @@ def deduplicate_articles(articles, config):
     5. 'justification': Combine the justifications.
     6. 'source': Combine the sources (e.g. "TechCrunch, 36氪").
     7. 'link': Provide a SINGLE primary URL (pick the best one, do NOT combine multiple URLs).
+    8. 'published_at': Keep the earliest 'published_at' among the merged articles.
     
     Output strictly in JSON format matching this schema:
     {{
@@ -178,7 +180,8 @@ def deduplicate_articles(articles, config):
           "traffic_score": integer,
           "justification": string,
           "source": string,
-          "link": string
+          "link": string,
+          "published_at": string
         }}
       ]
     }}
@@ -200,7 +203,7 @@ def deduplicate_articles(articles, config):
             "summary": ma.get("translated_summary", ""),
             "source": ma.get("source", ""),
             "link": ma.get("link", ""),
-            "published_at": "", 
+            "published_at": ma.get("published_at", ""), 
             "score_data": {
                 "is_relevant": True,
                 "innovation_score": ma.get("innovation_score", 0),
