@@ -108,13 +108,14 @@ def score_article(article, config):
     
     Article Title: {article['title']}
     Article Summary: {article['summary']}
+    Current Date: {datetime.now().strftime('%Y-%m-%d')}
     
     Tasks:
     1. Determine if this article is relevant to the tech industry (True/False). 
        **CRITICAL REJECTION RULES: You MUST set is_relevant to False if the article is:**
        - A news roundup, summary, or digest (e.g., "Top 10 news", "Morning brief", "Weekly digest", "8点1氪", "氪星晚报", "晚报").
        - A shopping deal, discount, or advertisement (e.g., "Prime Day deals", "Black Friday", "Save $50 on...", "优惠精选", "购物指南").
-       - Re-hashed old news or an old event being re-reported as new (e.g., "炒冷饭" - a breakthrough or event that actually happened months or years ago but is being reposted today).
+       - Re-hashed old news or an old event being re-reported as new (e.g., "炒冷饭" - a breakthrough or event that actually happened months or years prior to the Current Date). If you recognize the event as historical relative to the Current Date, YOU MUST REJECT IT by setting is_relevant to False.
     2. If relevant, score its 'innovation_score' (0-10).
     3. Score its 'traffic_score' (0-10).
     4. Provide a concise 1-sentence justification explaining the scores in {config.get('output', {}).get('language', 'Chinese')}.
