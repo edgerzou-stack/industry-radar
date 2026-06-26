@@ -1,8 +1,14 @@
 import requests
 from bs4 import BeautifulSoup
-from score import get_client
+import os
 from google import genai
 import json
+
+def get_gemini_client():
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    return genai.Client(api_key=api_key)
 
 def fetch_full_text(url):
     try:
@@ -37,7 +43,7 @@ def fetch_full_text(url):
             return "", []
 
 def find_primary_source(full_text, links, original_url, config):
-    client = get_client()
+    client = get_gemini_client()
     if not client or not links:
         return original_url
         
@@ -59,7 +65,7 @@ def find_primary_source(full_text, links, original_url, config):
     """
     try:
         response = client.models.generate_content(
-            model=config.get('output', {}).get('model', 'gemini-1.5-flash'), 
+            model='gemini-2.5-flash', 
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -97,7 +103,7 @@ def generate_deep_dive_report(article, config):
         analysis_text = original_text
         primary_url = url
         
-    client = get_client()
+    client = get_gemini_client()
     if not client:
         return None
         
@@ -121,7 +127,7 @@ def generate_deep_dive_report(article, config):
     try:
         full_prompt = "You are a professional VC analyst.\n\n" + prompt
         response = client.models.generate_content(
-            model="gemini-1.5-pro", # Force the most powerful model
+            model="gemini-2.5-flash", # Use flash because pro quota is 0 on this preview key
             contents=full_prompt,
             config=genai.types.GenerateContentConfig(
                 temperature=0.3,
