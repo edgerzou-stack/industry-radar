@@ -4,6 +4,7 @@ from datetime import datetime
 from ingest import fetch_rss_feeds
 from score import score_article
 from dotenv import load_dotenv
+from cache_manager import load_cache, save_cache
 import smtplib
 from email.message import EmailMessage
 import markdown
@@ -48,8 +49,15 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
         t_score = sd.get('traffic_score', 0)
         
         if i_score >= 9 or t_score >= 9:
-            from deep_dive import generate_deep_dive_report
-            dd = generate_deep_dive_report(a, config)
+            # Check deep dive cache
+            cache_key = a.get('link')
+            dd = None
+            if 'deep_dive' in a:
+                dd = a['deep_dive']
+            else:
+                from deep_dive import generate_deep_dive_report
+                dd = generate_deep_dive_report(a, config)
+                
             if dd:
                 a['deep_dive'] = dd
                 deep_dives.append(a)
@@ -271,14 +279,65 @@ def main():
         scored_articles = articles
     else:
         scored_articles = []
+        
+        # Load incremental cache
+        cache_data = load_cache()
+        
+        print(f"Loaded {len(cache_data)} articles from incremental cache.", flush=True)
         print("Scoring articles using Dual-Track LLM...", flush=True)
+        
+        cache_updates = 0
+        
         for idx, article in enumerate(articles):
             import time
+            link = article.get('link')
+            
+            # 1. Check if it's already in cache
+            if link in cache_data and 'score_data' in cache_data[link]:
+                print(f"[{idx+1}/{len(articles)}] (Cached) {article['title'][:30]}...", flush=True)
+                article['score_data'] = cache_data[link]['score_data']
+                # Restore deep_dive if it exists in cache
+                if 'deep_dive' in cache_data[link]:
+                    article['deep_dive'] = cache_data[link]['deep_dive']
+                scored_articles.append(article)
+                continue
+                
+            # 2. Not in cache, call LLM
+            print(f"[{idx+1}/{len(articles)}] (New) Scoring: {article['title'][:30]}...", flush=True)
             score_data = score_article(article, config)
             article['score_data'] = score_data
             scored_articles.append(article)
-            print(f"Scored {idx+1}/{len(articles)}: [I:{score_data.get('innovation_score')} T:{score_data.get('traffic_score')}]", flush=True)
+            
+            # 3. Update cache memory
+            if link not in cache_data:
+                cache_data[link] = {}
+            cache_data[link]['score_data'] = score_data
+            
+            # Save deep dive if it was generated inside scoring (though we generate it in report phase)
+            cache_updates += 1
+            
+            # 4. Save cache to disk periodically (every 5 articles) to ensure resume capability
+            if cache_updates % 5 == 0:
+                save_cache(cache_data)
+                
+        # Final save for the scoring phase
+        if cache_updates > 0:
+            save_cache(cache_data)
     
+    
+    # We must also save cache if any deep dives were generated during the report phase
+    # Update cache with newly generated deep_dives
+    new_dd = False
+    for a in scored_articles:
+        link = a.get('link')
+        if 'deep_dive' in a and link in cache_data:
+            if 'deep_dive' not in cache_data[link]:
+                cache_data[link]['deep_dive'] = a['deep_dive']
+                new_dd = True
+    
+    if new_dd:
+        save_cache(cache_data)
+        
     report_path = generate_markdown_report(scored_articles, config)
     print(f"\nReport generated successfully: {report_path}", flush=True)
     
