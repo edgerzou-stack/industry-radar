@@ -10,8 +10,12 @@ def fetch_rss_feeds(feeds, hours_back=168):
     for feed_url in feeds:
         print(f"Fetching from {feed_url}...")
         try:
+            # Add a modern User-Agent to bypass basic anti-bot (e.g., Cloudflare) which might drop headless connections leading to timeouts
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
             # Use requests with a timeout to prevent feedparser from hanging on bad connections
-            res = requests.get(feed_url, timeout=10)
+            res = requests.get(feed_url, headers=headers, timeout=10)
             feed = feedparser.parse(res.content)
             for entry in feed.entries:
                 # Parse publication date
