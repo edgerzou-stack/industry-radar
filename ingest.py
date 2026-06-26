@@ -35,7 +35,8 @@ def fetch_rss_feeds(feeds, hours_back=168):
                         'published_at': pub_date.isoformat()
                     })
         except Exception as e:
-            print(f"Error fetching {feed_url}: {e}")
+            print(f"Error fetching {feed_url}: {e}. Halting execution as requested!", flush=True)
+            raise e
             
     return articles
 
