@@ -294,8 +294,9 @@ def main():
             
             # 1. Check if it's already in cache
             if link in cache_data and 'score_data' in cache_data[link]:
-                print(f"[{idx+1}/{len(articles)}] (Cached) {article['title'][:30]}...", flush=True)
-                article['score_data'] = cache_data[link]['score_data']
+                sd = cache_data[link]['score_data']
+                print(f"[{idx+1}/{len(articles)}] (Cached) [I:{sd.get('innovation_score')} T:{sd.get('traffic_score')}] {article['title'][:30]}...", flush=True)
+                article['score_data'] = sd
                 # Restore deep_dive if it exists in cache
                 if 'deep_dive' in cache_data[link]:
                     article['deep_dive'] = cache_data[link]['deep_dive']
@@ -307,6 +308,7 @@ def main():
             score_data = score_article(article, config)
             article['score_data'] = score_data
             scored_articles.append(article)
+            print(f"  -> Result: [I:{score_data.get('innovation_score')} T:{score_data.get('traffic_score')}]", flush=True)
             
             # 3. Update cache memory
             if link not in cache_data:
