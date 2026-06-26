@@ -107,10 +107,7 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
                     f.write(f"**摘要**: {sd['translated_summary']}\n\n")
                 f.write(f"> **点评**: {sd['justification']}\n\n")
                 
-                # Link to the attachment
-                safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c==' ']).rstrip()
-                filename = f"研报全文_{safe_title}.html".replace(" ", "_")
-                f.write(f"[👇 研报全文已作为附件发送，请点击邮件底部的附件查看: {filename}] | [🌐 溯源官方原文]({dd['primary_url']})\n\n---\n")
+                f.write(f"[👇 阅读 AI 深度研报全文](#deep-dive-report-{idx}) | [🌐 溯源官方原文]({dd['primary_url']})\n\n---\n")
                 
         if supernova:
             f.write("## 🌟 顶流硬核 (Supernova)\n_兼具颠覆性技术价值与爆炸性市场流量的里程碑事件！_\n\n")
@@ -127,46 +124,23 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
             for a in hype:
                 write_article_block(f, a)
                 
-    attachment_paths = []
-    if deep_dives:
-        import markdown
-        for idx, a in enumerate(deep_dives):
-            dd = a['deep_dive']
-            title = a['score_data'].get('translated_title', a['title'])
-            safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c==' ']).rstrip()
-            filename = f"研报全文_{safe_title}.html".replace(" ", "_")
-            filepath = os.path.join(output_dir, filename)
-            
-            html_content = f"""
-            <html>
-            <head>
-            <meta charset="utf-8">
-            <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.8; color: #333; padding: 40px; max-width: 800px; margin: 0 auto; background: #fff; }}
-                h1, h2, h3 {{ color: #111827; }}
-                h2 {{ border-bottom: 2px solid #3b82f6; padding-bottom: 10px; margin-top: 30px; }}
-                p {{ margin-bottom: 16px; font-size: 16px; }}
-                a {{ color: #3b82f6; text-decoration: none; }}
-                a:hover {{ text-decoration: underline; }}
-                ul, ol {{ margin-bottom: 16px; font-size: 16px; }}
-                li {{ margin-bottom: 8px; }}
-            </style>
-            </head>
-            <body>
-                <h1 style="text-align: center;">{title}</h1>
-                <p style="text-align: center; color: #666;">来源链接: <a href="{dd['primary_url']}">{dd['primary_url']}</a></p>
-                <hr style="border: 0; height: 1px; background: #eee; margin: 30px 0;">
-                {markdown.markdown(dd['report_content'])}
-            </body>
-            </html>
-            """
-            with open(filepath, 'w', encoding='utf-8') as html_file:
-                html_file.write(html_content)
-            attachment_paths.append(filepath)
+                write_article_block(f, a)
                 
-    return report_path, attachment_paths
+        if deep_dives:
+            # Create massive whitespace to isolate the appendix
+            f.write("\n\n<div style=\"margin-top: 1200px; padding-top: 50px; border-top: 2px dashed #ccc;\"></div>\n\n")
+            f.write("# ⬇️ 深度研报全文附录 (Deep Dive Appendix)\n\n")
+            for idx, a in enumerate(deep_dives):
+                dd = a['deep_dive']
+                title = a['score_data'].get('translated_title', a['title'])
+                f.write(f"<a id=\"deep-dive-report-{idx}\"></a>\n")
+                f.write(f"## {title} - 深度研报\n\n")
+                f.write(f"{dd['report_content']}\n\n")
+                f.write(f"---\n")
+                
+    return report_path
 
-def send_email(report_path, attachment_paths, config):
+def send_email(report_path, config):
     delivery_cfg = config.get("delivery", {})
     if not delivery_cfg.get("enabled"):
         return
@@ -280,14 +254,6 @@ def send_email(report_path, attachment_paths, config):
     msg.set_content(md_content) # Plain text fallback
     msg.add_alternative(html_content, subtype='html') # Rich HTML version
     
-    import mimetypes
-    for attachment_path in attachment_paths:
-        if os.path.exists(attachment_path):
-            with open(attachment_path, 'rb') as att_file:
-                file_data = att_file.read()
-                file_name = os.path.basename(attachment_path)
-                msg.add_attachment(file_data, maintype='text', subtype='html', filename=file_name)
-    
     try:
         with smtplib.SMTP(server, port) as smtp:
             smtp.starttls()
@@ -394,13 +360,11 @@ def main():
     if new_dd:
         save_cache(cache_data)
         
-    report_path, attachment_paths = generate_markdown_report(scored_articles, config)
+    report_path = generate_markdown_report(scored_articles, config)
     print(f"\nReport generated successfully: {report_path}", flush=True)
-    if attachment_paths:
-        print(f"Generated {len(attachment_paths)} Deep Dive attachments.", flush=True)
     
     # 5. Send Email
-    send_email(report_path, attachment_paths, config)
+    send_email(report_path, config)
 
 if __name__ == "__main__":
     main()
