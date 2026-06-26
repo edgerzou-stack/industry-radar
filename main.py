@@ -48,7 +48,7 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
         i_score = sd.get('innovation_score', 0)
         t_score = sd.get('traffic_score', 0)
         
-        if i_score >= 9 or t_score >= 9:
+        if i_score >= 9 and t_score >= 9:
             # Check deep dive cache
             cache_key = a.get('link')
             dd = None
@@ -122,8 +122,6 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
         if hype:
             f.write("## 📈 产业焦点与流量狂欢 (Traffic & Hype)\n_当前资本和大众的注意力焦点。可能是风口，也可能是抓马泡沫。_\n\n")
             for a in hype:
-                write_article_block(f, a)
-                
                 write_article_block(f, a)
                 
         if deep_dives:
