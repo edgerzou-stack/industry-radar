@@ -1,31 +1,108 @@
 import os
 import time
 import json
-from pydantic import BaseModel
 from dotenv import load_dotenv
+from openai import OpenAI
 from google import genai
 
 load_dotenv()
 
-class ArticleScore(BaseModel):
-    is_relevant: bool
-    innovation_score: int
-    traffic_score: int
-    justification: str
-    translated_title: str
-    translated_summary: str
-
-def get_client():
+def get_gemini_client():
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return None
     return genai.Client(api_key=api_key)
 
-def score_article(article, config):
-    client = get_client()
-    if not client:
-        return {"innovation_score": 0, "traffic_score": 0, "justification": "OpenAI API Key not configured", "is_relevant": False, "translated_title": article['title'], "translated_summary": "Error"}
+def get_openai_client():
+    api_key = os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    if not api_key:
+        return None
+    return OpenAI(api_key=api_key, base_url=base_url, timeout=120.0)
 
+def get_deepseek_client():
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    if not api_key:
+        return None
+    return OpenAI(api_key=api_key, base_url=base_url, timeout=120.0)
+
+def _call_llm_with_fallback(prompt, config, system_prompt="You are a helpful assistant designed to output JSON.", title_context=""):
+    """
+    Executes the Triple-Tier Cascade Router:
+    1. Google Gemini (gemini-2.5-flash)
+    2. OpenAI (gpt-5.4-mini for scoring, gpt-5.5 for heavy lifting)
+    3. DeepSeek (deepseek-v4-flash for scoring, deepseek-v4-pro for heavy lifting)
+    """
+    
+    is_heavy = "VC Analyst" in system_prompt
+    openai_model = "gpt-5.5" if is_heavy else "gpt-5.4-mini"
+    deepseek_model = "deepseek-v4-pro" if is_heavy else "deepseek-v4-flash"
+    
+    # 1. Gemini
+    gemini_client = get_gemini_client()
+    if gemini_client:
+        try:
+            response = gemini_client.models.generate_content(
+                model='gemini-2.5-flash', 
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1,
+                )
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            err_str = str(e).lower()
+            if "429" in err_str or "exhausted" in err_str or "quota" in err_str:
+                print(f"Gemini quota exhausted for '{title_context}'. Falling back to OpenAI...", flush=True)
+            else:
+                print(f"Gemini error for '{title_context}': {e}. Halting execution!", flush=True)
+                raise e
+
+    # 2. OpenAI
+    openai_client = get_openai_client()
+    if openai_client:
+        try:
+            response = openai_client.chat.completions.create(
+                model=openai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            )
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            err_str = str(e).lower()
+            if "429" in err_str or "exhausted" in err_str or "quota" in err_str:
+                print(f"OpenAI rate limited for '{title_context}'. Falling back to DeepSeek...", flush=True)
+            else:
+                print(f"OpenAI error for '{title_context}': {e}. Halting execution!", flush=True)
+                raise e
+
+    # 3. DeepSeek
+    deepseek_client = get_deepseek_client()
+    if deepseek_client:
+        try:
+            response = deepseek_client.chat.completions.create(
+                model=deepseek_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            )
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            print(f"DeepSeek error for '{title_context}': {e}. Halting execution!", flush=True)
+            raise e
+            
+    raise Exception(f"All LLM APIs failed or are unconfigured for '{title_context}'")
+
+def score_article(article, config):
     prompt = f"""
     You are an expert industry analyst and VC. Evaluate this tech news article based on the dual-track criteria.
     
@@ -43,7 +120,7 @@ def score_article(article, config):
     3. Score its 'traffic_score' (0-10).
     4. Provide a concise 1-sentence justification explaining the scores in {config.get('output', {}).get('language', 'Chinese')}.
     5. Provide the translation of the 'Article Title' into {config.get('output', {}).get('language', 'Chinese')}.
-    6. Provide a short summary of the article content in {config.get('output', {}).get('language', 'Chinese')}.
+    6. Provide a HIGHLY CONDENSED summary of the article content. **CRITICAL RULE: The translated_summary MUST be ONE SINGLE SENTENCE and MUST NOT exceed 50 Chinese characters. Be extremely brief.**
     
     You must output strictly in JSON format matching this schema:
     {{
@@ -56,38 +133,14 @@ def score_article(article, config):
     }}
     """
     
-    model_name = config.get('output', {}).get('model', 'gpt-4o-mini')
-    
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.2,
-                )
-            )
-            result = json.loads(response.text)
-            time.sleep(4.5) # 强制节流，适配 Gemini Free Tier 的 15 RPM 限制
-            return result
-        except Exception as e:
-            err_msg = str(e).lower()
-            if "429" in err_msg or "quota" in err_msg or "rate limit" in err_msg or "time" in err_msg or "connect" in err_msg or "502" in err_msg or "503" in err_msg:
-                if attempt < max_retries - 1:
-                    print(f"Rate limited or Connection Error. Waiting 3s before retry {attempt+1}/{max_retries}... ({e})", flush=True)
-                    time.sleep(3)
-                    continue
-            print(f"Error scoring article '{article['title']}': {e}", flush=True)
-            return {"innovation_score": 0, "traffic_score": 0, "justification": f"Error: {e}", "is_relevant": False, "translated_title": article['title'], "translated_summary": "Error"}
+    result = _call_llm_with_fallback(prompt, config, title_context=article['title'][:30])
+    if result:
+        return result
+        
+    return {"innovation_score": 0, "traffic_score": 0, "justification": "All API endpoints failed or unconfigured", "is_relevant": False, "translated_title": article['title'], "translated_summary": "Error"}
 
 def deduplicate_articles(articles, config):
     if len(articles) <= 1:
-        return articles
-        
-    client = get_client()
-    if not client:
         return articles
         
     payload = []
@@ -99,10 +152,8 @@ def deduplicate_articles(articles, config):
             "summary": sd.get('translated_summary', a['summary']),
             "source": a['source'],
             "link": a['link'],
-            "published_at": a['published_at'],
             "innovation_score": sd.get('innovation_score', 0),
-            "traffic_score": sd.get('traffic_score', 0),
-            "justification": sd.get('justification', '')
+            "traffic_score": sd.get('traffic_score', 0)
         })
         
     prompt = f"""
@@ -112,9 +163,9 @@ def deduplicate_articles(articles, config):
     
     When merging:
     1. 'translated_title': Create a comprehensive title in {config.get('output', {}).get('language', 'Chinese')}.
-    2. 'translated_summary': Write a merged summary capturing all perspectives in {config.get('output', {}).get('language', 'Chinese')}.
+    2. 'translated_summary': Write a merged summary capturing all perspectives. **CRITICAL RULE: The translated_summary MUST be ONE SINGLE SENTENCE and MUST NOT exceed 50 Chinese characters. Be extremely brief.**
     3. 'innovation_score': Keep the MAX innovation_score among the merged articles.
-    4. 'traffic_score': Keep the MAX traffic_score among the merged articles. CRITICAL: If you are merging articles from MULTIPLE DIFFERENT sources, this indicates high cross-platform virality. Add +1 to the final traffic_score for every additional unique source beyond the first (up to a max of 10).
+    4. 'traffic_score': Keep the MAX traffic_score among the merged articles. CRITICAL: If merging from MULTIPLE DIFFERENT sources, add +1 to the final traffic_score for every additional unique source (up to a max of 10).
     5. 'justification': Combine the justifications.
     6. 'source': Combine the sources (e.g. "TechCrunch, 36氪").
     7. 'link': Provide a SINGLE primary URL (pick the best one, do NOT combine multiple URLs).
@@ -129,8 +180,7 @@ def deduplicate_articles(articles, config):
           "traffic_score": integer,
           "justification": string,
           "source": string,
-          "link": string,
-          "published_at": string
+          "link": string
         }}
       ]
     }}
@@ -139,37 +189,27 @@ def deduplicate_articles(articles, config):
     {json.dumps(payload, ensure_ascii=False)}
     """
     
-    model_name = "gemini-1.5-flash"
+    result_json = _call_llm_with_fallback(prompt, config, title_context="Deduplication Phase")
     
-    try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.1,
-            )
-        )
-        result = json.loads(response.text)
-        
-        final_articles = []
-        for ma in result.get("merged_articles", []):
-            final_articles.append({
-                "title": ma.get("translated_title", ""),
-                "summary": ma.get("translated_summary", ""),
-                "source": ma.get("source", ""),
-                "link": ma.get("link", ""),
-                "published_at": ma.get("published_at", ""),
-                "score_data": {
-                    "is_relevant": True,
-                    "innovation_score": ma.get("innovation_score", 0),
-                    "traffic_score": ma.get("traffic_score", 0),
-                    "justification": ma.get("justification", ""),
-                    "translated_title": ma.get("translated_title", ""),
-                    "translated_summary": ma.get("translated_summary", "")
-                }
-            })
-        return final_articles
-    except Exception as e:
-        print(f"Error deduplicating articles: {e}", flush=True)
+    if not result_json:
         return articles
+
+    final_articles = []
+    
+    for ma in result_json.get("merged_articles", []):
+        final_articles.append({
+            "title": ma.get("translated_title", ""),
+            "summary": ma.get("translated_summary", ""),
+            "source": ma.get("source", ""),
+            "link": ma.get("link", ""),
+            "published_at": "", 
+            "score_data": {
+                "is_relevant": True,
+                "innovation_score": ma.get("innovation_score", 0),
+                "traffic_score": ma.get("traffic_score", 0),
+                "justification": ma.get("justification", ""),
+                "translated_title": ma.get("translated_title", ""),
+                "translated_summary": ma.get("translated_summary", "")
+            }
+        })
+    return final_articles
