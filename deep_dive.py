@@ -53,8 +53,8 @@ def _call_llm_with_fallback(prompt, config, system_prompt="You are a helpful ass
             return json.loads(response.text)
         except Exception as e:
             err_str = str(e).lower()
-            if "429" in err_str or "exhausted" in err_str or "quota" in err_str:
-                print(f"  [Deep Dive] Gemini quota exhausted for '{title_context}'. Falling back to OpenAI...", flush=True)
+            if "429" in err_str or "exhausted" in err_str or "quota" in err_str or "503" in err_str or "unavailable" in err_str:
+                print(f"  [Deep Dive] Gemini limit/overload for '{title_context}'. Falling back to OpenAI...", flush=True)
             else:
                 print(f"  [Deep Dive] Gemini error for '{title_context}': {e}. Halting execution!", flush=True)
                 raise e
