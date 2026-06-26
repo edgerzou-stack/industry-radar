@@ -75,12 +75,7 @@ def _call_llm_with_fallback(prompt, config, system_prompt="You are a helpful ass
             )
             return json.loads(response.choices[0].message.content)
         except Exception as e:
-            err_str = str(e).lower()
-            if "429" in err_str or "exhausted" in err_str or "quota" in err_str:
-                print(f"OpenAI rate limited for '{title_context}'. Falling back to DeepSeek...", flush=True)
-            else:
-                print(f"OpenAI error for '{title_context}': {e}. Halting execution!", flush=True)
-                raise e
+            print(f"OpenAI error/limit for '{title_context}': {e}. Falling back to DeepSeek...", flush=True)
 
     # 3. DeepSeek
     deepseek_client = get_deepseek_client()
