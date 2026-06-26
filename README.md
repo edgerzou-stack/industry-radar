@@ -4,13 +4,14 @@ An automated, dual-track intelligence gathering system that acts as your persona
 
 ## ✨ Features
 
-- **Dual-Track VC Scoring System**: Articles are rigorously evaluated on two dimensions (0-10 scale) using OpenAI models:
+- **Dual-Track VC Scoring System**: Articles are rigorously evaluated on two dimensions (0-10 scale):
   - **🔬 Hardcore Innovation (硬核创新)**: Measures underlying technological breakthroughs, long-term commercial value, and disruptive potential.
   - **📈 Traffic & Hype (流量舆情)**: Measures short-term market sentiment, consumer frenzy, and social media buzz.
-- **Top-Tier Global Sources**: Pulls raw intelligence from extremely high-signal sources including *The Information, Hacker News (Top 100), MIT Technology Review, TechCrunch, 36Kr, VentureBeat, SiliconANGLE*, and more.
-- **Strict "Needle in a Haystack" Filtering**: Only articles scoring 8+ on either dimension pass the threshold, ensuring a "quality over quantity" approach. Out of 150+ articles daily, you only see the 2-3 that actually matter.
-- **Beautiful HTML Newsletter**: Generates a sleek, premium-formatted HTML email newsletter and delivers it automatically.
-- **Anti-Hang Armor**: Robust timeout and retry mechanisms designed to gracefully handle API rate limits and proxy server instability.
+- **Triple-Tier Cascade LLM Engine**: Leverages a robust fallback chain (Google Gemini -> OpenAI -> DeepSeek) to maximize stability, prevent API rate limits, and minimize costs.
+- **Strict "Needle in a Haystack" Anti-Spam**: Employs context-aware temporal logic (injecting the precise Current Date) to ruthlessly identify and filter out "炒冷饭" (re-hashed old news), news roundups, and shopping deals.
+- **Intelligent Deduplication**: Automatically merges identical news events reported by multiple outlets into a single, highly condensed summary while preserving the earliest publication date.
+- **Deep Dive Reports**: Automatically generates a multi-thousand-word deep-dive appendix for the rarest "Supernova" events (Requires Innovation >= 9 AND Traffic >= 9), elegantly separated by massive whitespace for a clean reading experience.
+- **Top-Tier Global Sources**: Pulls raw intelligence from high-signal sources including *The Information, Hacker News, MIT Technology Review, TechCrunch, 36Kr*, and more.
 
 ## 🛠️ Setup & Installation
 
