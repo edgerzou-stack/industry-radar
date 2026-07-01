@@ -48,7 +48,7 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
         i_score = sd.get('innovation_score', 0)
         t_score = sd.get('traffic_score', 0)
         
-        if i_score >= 9 and t_score >= 9:
+        if (i_score + t_score) >= 18:
             # Check deep dive cache
             cache_key = a.get('link')
             dd = None
@@ -77,7 +77,7 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
     def write_article_block(file, article):
         sd = article['score_data']
         title = sd.get('translated_title', article['title'])
-        file.write(f"### [硬核:{sd.get('innovation_score', 0)} | 流量:{sd.get('traffic_score', 0)}] {title}\n")
+        file.write(f"### [硬核:{float(sd.get('innovation_score', 0)):.1f} | 流量:{float(sd.get('traffic_score', 0)):.1f}] {title}\n")
         if title != article['title'] and sd.get('translated_title'):
             file.write(f"*{article['title']}*\n\n")
         file.write(f"**来源**: {article['source']} | **日期**: {article['published_at'][:10]}\n\n")
@@ -99,7 +99,7 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
                 sd = a['score_data']
                 title = sd.get('translated_title', a['title'])
                 dd = a['deep_dive']
-                f.write(f"### [硬核:{sd.get('innovation_score', 0)} | 流量:{sd.get('traffic_score', 0)}] {title}\n")
+                f.write(f"### [硬核:{float(sd.get('innovation_score', 0)):.1f} | 流量:{float(sd.get('traffic_score', 0)):.1f}] {title}\n")
                 if title != a['title'] and sd.get('translated_title'):
                     f.write(f"*{a['title']}*\n\n")
                 f.write(f"**来源**: {a['source']} | **日期**: {a['published_at'][:10]}\n\n")
@@ -107,7 +107,14 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
                     f.write(f"**摘要**: {sd['translated_summary']}\n\n")
                 f.write(f"> **点评**: {sd['justification']}\n\n")
                 
-                f.write(f"[👇 阅读 AI 深度研报全文](#deep-dive-report-{idx}) | [🌐 溯源官方原文]({dd['primary_url']})\n\n---\n")
+                f.write(f"[🌐 溯源官方原文]({dd['primary_url']})\n\n")
+                f.write(f"<details markdown=\"1\" style=\"margin-top: 15px; margin-bottom: 20px;\">\n")
+                f.write(f"  <summary style=\"cursor: pointer; color: #3b82f6; font-weight: bold; font-size: 16px;\">👇 点击展开/收起 AI 深度研报全文</summary>\n")
+                f.write(f"  <div markdown=\"1\" style=\"margin-top: 15px; padding: 20px; background: #f8fafc; border-radius: 8px; border-left: 4px solid #3b82f6; font-size: 14px; line-height: 1.6;\">\n\n")
+                f.write(f"**{title} - 深度研报**\n\n")
+                f.write(f"{dd['report_content']}\n\n")
+                f.write(f"  </div>\n")
+                f.write(f"</details>\n\n---\n")
                 
         if supernova:
             f.write("## 🌟 顶流硬核 (Supernova)\n_兼具颠覆性技术价值与爆炸性市场流量的里程碑事件！_\n\n")
@@ -124,17 +131,7 @@ def generate_markdown_report(scored_articles, config, output_dir="reports"):
             for a in hype:
                 write_article_block(f, a)
                 
-        if deep_dives:
-            # Create massive whitespace to isolate the appendix
-            f.write("\n\n<div style=\"margin-top: 1200px; padding-top: 50px; border-top: 2px dashed #ccc;\"></div>\n\n")
-            f.write("# ⬇️ 深度研报全文附录 (Deep Dive Appendix)\n\n")
-            for idx, a in enumerate(deep_dives):
-                dd = a['deep_dive']
-                title = a['score_data'].get('translated_title', a['title'])
-                f.write(f"<a id=\"deep-dive-report-{idx}\"></a>\n")
-                f.write(f"## {title} - 深度研报\n\n")
-                f.write(f"{dd['report_content']}\n\n")
-                f.write(f"---\n")
+        # Appendix removed as Deep Dive is now inline
                 
     return report_path
 
@@ -159,7 +156,7 @@ def send_email(report_path, config):
         md_content = f.read()
 
     # Convert markdown to HTML
-    html_body = markdown.markdown(md_content)
+    html_body = markdown.markdown(md_content, extensions=['tables', 'md_in_html'])
     
     # CSS styling for a premium newsletter look
     html_content = f"""
@@ -304,45 +301,114 @@ def main():
         print(f"Loaded {len(cache_data)} articles from incremental cache.", flush=True)
         print("Scoring articles using Dual-Track LLM...", flush=True)
         
+        import concurrent.futures
+        from score import pre_filter_articles_batch, score_articles_batch
+        
         cache_updates = 0
+        new_articles = []
         
         for idx, article in enumerate(articles):
-            import time
+            article['id'] = idx
             link = article.get('link')
             
-            # 1. Check if it's already in cache
             if link in cache_data and 'score_data' in cache_data[link]:
                 sd = cache_data[link]['score_data']
-                print(f"[{idx+1}/{len(articles)}] (Cached) [I:{sd.get('innovation_score')} T:{sd.get('traffic_score')}] {article['title'][:30]}...", flush=True)
+                print(f"[{idx+1}/{len(articles)}] (Cached) [I:{sd.get('innovation_score',0)} T:{sd.get('traffic_score',0)}] {article['title'][:30]}...", flush=True)
                 article['score_data'] = sd
-                # Restore deep_dive if it exists in cache
                 if 'deep_dive' in cache_data[link]:
                     article['deep_dive'] = cache_data[link]['deep_dive']
                 scored_articles.append(article)
-                continue
+            else:
+                new_articles.append(article)
                 
-            # 2. Not in cache, call LLM
-            print(f"[{idx+1}/{len(articles)}] (New) Scoring: {article['title'][:30]}...", flush=True)
-            score_data = score_article(article, config)
-            article['score_data'] = score_data
-            scored_articles.append(article)
-            print(f"  -> Result: [I:{score_data.get('innovation_score')} T:{score_data.get('traffic_score')}]", flush=True)
+        print(f"Found {len(new_articles)} new articles to process.", flush=True)
+        
+        if new_articles:
+            print("--- Phase 1: Pre-filtering (Batches of 20) ---", flush=True)
+            passed_pre_filter = []
             
-            # 3. Update cache memory
-            if link not in cache_data:
-                cache_data[link] = {}
-            cache_data[link]['score_data'] = score_data
+            def process_pre_filter_batch(batch):
+                try:
+                    res = pre_filter_articles_batch(batch, config)
+                    return res.get("results", [])
+                except Exception as e:
+                    print(f"Phase 1 Error: {e}", flush=True)
+                    return []
             
-            # Save deep dive if it was generated inside scoring (though we generate it in report phase)
-            cache_updates += 1
+            batches_p1 = [new_articles[i:i + 20] for i in range(0, len(new_articles), 20)]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                futures_p1 = [executor.submit(process_pre_filter_batch, b) for b in batches_p1]
+                
+                for future in concurrent.futures.as_completed(futures_p1):
+                    results = future.result()
+                    for r in results:
+                        article_id = r.get("id")
+                        is_rel = r.get("is_relevant", False)
+                        
+                        # Find the article
+                        matched = next((a for a in new_articles if a['id'] == article_id), None)
+                        if matched:
+                            if is_rel:
+                                passed_pre_filter.append(matched)
+                            else:
+                                # Mark as irrelevant and cache immediately
+                                sd = {
+                                    "is_relevant": False,
+                                    "innovation_score": 0, "traffic_score": 0,
+                                    "justification": "Filtered out in Phase 1 (Pre-filter)",
+                                    "translated_title": matched['title'],
+                                    "translated_summary": ""
+                                }
+                                matched['score_data'] = sd
+                                scored_articles.append(matched)
+                                
+                                link = matched.get('link')
+                                if link not in cache_data: cache_data[link] = {}
+                                cache_data[link]['score_data'] = sd
+                                cache_updates += 1
+                                
+            print(f"Phase 1 complete. {len(passed_pre_filter)} articles survived.", flush=True)
             
-            # 4. Save cache to disk periodically (every 5 articles) to ensure resume capability
-            if cache_updates % 5 == 0:
+            if passed_pre_filter:
+                print("--- Phase 2: Detailed Scoring (Batches of 5) ---", flush=True)
+                
+                def process_scoring_batch(batch):
+                    try:
+                        res = score_articles_batch(batch, config)
+                        return res.get("results", [])
+                    except Exception as e:
+                        print(f"Phase 2 Error: {e}", flush=True)
+                        return []
+                        
+                batches_p2 = [passed_pre_filter[i:i + 5] for i in range(0, len(passed_pre_filter), 5)]
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                    futures_p2 = [executor.submit(process_scoring_batch, b) for b in batches_p2]
+                    
+                    for future in concurrent.futures.as_completed(futures_p2):
+                        results = future.result()
+                        for r in results:
+                            article_id = r.get("id")
+                            # Find the article
+                            matched = next((a for a in passed_pre_filter if a['id'] == article_id), None)
+                            if matched:
+                                matched['score_data'] = {
+                                    "is_relevant": r.get("is_relevant", True),
+                                    "innovation_score": r.get("innovation_score", 0),
+                                    "traffic_score": r.get("traffic_score", 0),
+                                    "justification": r.get("justification", ""),
+                                    "translated_title": r.get("translated_title", matched['title']),
+                                    "translated_summary": r.get("translated_summary", "")
+                                }
+                                scored_articles.append(matched)
+                                print(f"  -> Scored [{matched['id']}] [I:{matched['score_data']['innovation_score']} T:{matched['score_data']['traffic_score']}] {matched['title'][:30]}", flush=True)
+                                
+                                link = matched.get('link')
+                                if link not in cache_data: cache_data[link] = {}
+                                cache_data[link]['score_data'] = matched['score_data']
+                                cache_updates += 1
+                                
+            if cache_updates > 0:
                 save_cache(cache_data)
-                
-        # Final save for the scoring phase
-        if cache_updates > 0:
-            save_cache(cache_data)
     
     
     # We must also save cache if any deep dives were generated during the report phase
@@ -362,7 +428,8 @@ def main():
     print(f"\nReport generated successfully: {report_path}", flush=True)
     
     # 5. Send Email
-    send_email(report_path, config)
+    # Email is now sent by the unified daily runner
+    # send_email(report_path, config)
 
 if __name__ == "__main__":
     main()

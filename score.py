@@ -1,102 +1,10 @@
 import os
-import time
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-from openai import OpenAI
-from google import genai
+from llm_router import _call_llm_with_fallback
 
 load_dotenv()
-
-def get_gemini_client():
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return None
-    return genai.Client(api_key=api_key)
-
-def get_openai_client():
-    api_key = os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    if not api_key:
-        return None
-    return OpenAI(api_key=api_key, base_url=base_url, timeout=120.0)
-
-def get_deepseek_client():
-    api_key = os.getenv("DEEPSEEK_API_KEY")
-    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    if not api_key:
-        return None
-    return OpenAI(api_key=api_key, base_url=base_url, timeout=120.0)
-
-def _call_llm_with_fallback(prompt, config, system_prompt="You are a helpful assistant designed to output JSON.", title_context=""):
-    """
-    Executes the Triple-Tier Cascade Router:
-    1. Google Gemini (gemini-2.5-flash)
-    2. OpenAI (gpt-5.4-mini for scoring, gpt-5.5 for heavy lifting)
-    3. DeepSeek (deepseek-v4-flash for scoring, deepseek-v4-pro for heavy lifting)
-    """
-    
-    is_heavy = "VC Analyst" in system_prompt
-    openai_model = "gpt-5.5" if is_heavy else "gpt-5.4-mini"
-    deepseek_model = "deepseek-v4-pro" if is_heavy else "deepseek-v4-flash"
-    
-    # 1. Gemini
-    gemini_client = get_gemini_client()
-    if gemini_client:
-        try:
-            response = gemini_client.models.generate_content(
-                model='gemini-2.5-flash', 
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.1,
-                )
-            )
-            return json.loads(response.text)
-        except Exception as e:
-            err_str = str(e).lower()
-            if "429" in err_str or "exhausted" in err_str or "quota" in err_str or "503" in err_str or "unavailable" in err_str:
-                print(f"Gemini limit/overload for '{title_context}'. Falling back to OpenAI...", flush=True)
-            else:
-                print(f"Gemini error for '{title_context}': {e}. Halting execution!", flush=True)
-                raise e
-
-    # 2. OpenAI
-    openai_client = get_openai_client()
-    if openai_client:
-        try:
-            response = openai_client.chat.completions.create(
-                model=openai_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1,
-            )
-            return json.loads(response.choices[0].message.content)
-        except Exception as e:
-            print(f"OpenAI error/limit for '{title_context}': {e}. Falling back to DeepSeek...", flush=True)
-
-    # 3. DeepSeek
-    deepseek_client = get_deepseek_client()
-    if deepseek_client:
-        try:
-            response = deepseek_client.chat.completions.create(
-                model=deepseek_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1,
-            )
-            return json.loads(response.choices[0].message.content)
-        except Exception as e:
-            print(f"DeepSeek error for '{title_context}': {e}. Halting execution!", flush=True)
-            raise e
-            
-    raise Exception(f"All LLM APIs failed or are unconfigured for '{title_context}'")
 
 def score_article(article, config):
     prompt = f"""
@@ -117,8 +25,8 @@ def score_article(article, config):
        - A news roundup, summary, or digest (e.g., "Top 10 news", "Morning brief", "Weekly digest", "8点1氪", "氪星晚报", "晚报").
        - A shopping deal, discount, or advertisement (e.g., "Prime Day deals", "Black Friday", "Save $50 on...", "优惠精选", "购物指南").
        - Re-hashed old news or an old event being re-reported as new (e.g., "炒冷饭" - a breakthrough or event that actually happened months or years prior to the Current Date). If you recognize the event as historical relative to the Current Date, YOU MUST REJECT IT by setting is_relevant to False.
-    2. If relevant, score its 'innovation_score' (0-10).
-    3. Score its 'traffic_score' (0-10).
+    2. If relevant, score its 'innovation_score' (0.0-10.0, can use 1 decimal place e.g., 7.5).
+    3. Score its 'traffic_score' (0.0-10.0, can use 1 decimal place e.g., 8.2).
     4. Provide a concise 1-sentence justification explaining the scores in {config.get('output', {}).get('language', 'Chinese')}.
     5. Provide the translation of the 'Article Title' into {config.get('output', {}).get('language', 'Chinese')}.
     6. Provide a HIGHLY CONDENSED summary of the article content. **CRITICAL RULE: The translated_summary MUST be ONE SINGLE SENTENCE and MUST NOT exceed 50 Chinese characters. Be extremely brief.**
@@ -126,8 +34,8 @@ def score_article(article, config):
     You must output strictly in JSON format matching this schema:
     {{
       "is_relevant": boolean,
-      "innovation_score": integer,
-      "traffic_score": integer,
+      "innovation_score": float,
+      "traffic_score": float,
       "justification": string,
       "translated_title": string,
       "translated_summary": string
@@ -144,76 +52,190 @@ def deduplicate_articles(articles, config):
     if len(articles) <= 1:
         return articles
         
+    from llm_router import _call_llm_with_fallback
+    import json
+    
+    # Sort articles by published_at (earliest first)
+    sorted_articles = sorted(articles, key=lambda x: x.get('published_at', '9999-12-31'))
+    
+    from llm_router import _call_llm_with_fallback
+    import json
+
+    # Prepare payload for LLM
     payload = []
-    for idx, a in enumerate(articles):
-        sd = a.get('score_data', {})
+    for i, a in enumerate(sorted_articles):
+        # Pass the original long summary or content (up to 800 chars) instead of the truncated 50-char summary
+        # This gives the LLM enough context to realize they are the same event.
+        long_text = a.get('content', a.get('summary', ''))
+        if long_text:
+            long_text = long_text[:800]
+        
         payload.append({
-            "id": idx,
-            "title": sd.get('translated_title', a['title']),
-            "summary": sd.get('translated_summary', a['summary']),
-            "source": a['source'],
-            "link": a['link'],
-            "published_at": a.get('published_at', ''),
-            "innovation_score": sd.get('innovation_score', 0),
-            "traffic_score": sd.get('traffic_score', 0)
+            "id": i,
+            "title": a.get('title', ''),
+            "text": long_text
         })
         
     prompt = f"""
-    You are an expert tech editor. Your task is to review the following top news articles and merge those that report on the EXACT SAME EVENT.
-    If multiple articles are about the same event/announcement, merge them into a single article.
-    If an article is unique, keep it as its own entry.
-    
-    When merging:
-    1. 'translated_title': Create a comprehensive title in {config.get('output', {}).get('language', 'Chinese')}.
-    2. 'translated_summary': Write a merged summary capturing all perspectives. **CRITICAL RULE: The translated_summary MUST be ONE SINGLE SENTENCE and MUST NOT exceed 50 Chinese characters. Be extremely brief.**
-    3. 'innovation_score': Keep the MAX innovation_score among the merged articles.
-    4. 'traffic_score': Keep the MAX traffic_score among the merged articles. CRITICAL: If merging from MULTIPLE DIFFERENT sources, add +1 to the final traffic_score for every additional unique source (up to a max of 10).
-    5. 'justification': Combine the justifications.
-    6. 'source': Combine the sources (e.g. "TechCrunch, 36氪").
-    7. 'link': Provide a SINGLE primary URL (pick the best one, do NOT combine multiple URLs).
-    8. 'published_at': Keep the earliest 'published_at' among the merged articles.
-    
-    Output strictly in JSON format matching this schema:
+    You are a professional industry analyst. I have a list of tech news articles. Some of them are reporting on the exact same underlying event, just from different news outlets (e.g., they might use slightly different numbers or phrasing to describe the same event).
+    Your task is to identify all duplicates and group them together.
+    Here is the JSON list of articles:
+    {json.dumps(payload, ensure_ascii=False, indent=2)}
+
+    Return your answer strictly in JSON format matching this schema:
     {{
-      "merged_articles": [
-        {{
-          "translated_title": string,
-          "translated_summary": string,
-          "innovation_score": integer,
-          "traffic_score": integer,
-          "justification": string,
-          "source": string,
-          "link": string,
-          "published_at": string
-        }}
+      "groups": [[int, ...], [int]] // A list of lists of IDs. Each inner list represents a unique event and contains the IDs of articles discussing it.
+    }}
+    """
+    
+    try:
+        res = _call_llm_with_fallback(prompt, config, system_prompt="You are a helpful assistant designed to output JSON.", title_context="dedup_batch")
+        groups = res.get("groups", [])
+    except Exception as e:
+        print(f"LLM Deduplication error: {e}. Falling back to returning original articles.", flush=True)
+        return sorted_articles
+        
+    final_articles = []
+    processed = set()
+    for group in groups:
+        if not group:
+            continue
+        valid_group = [idx for idx in group if 0 <= idx < len(sorted_articles) and idx not in processed]
+        if not valid_group:
+            continue
+            
+        base_idx = valid_group[0]
+        base_article = sorted_articles[base_idx]
+        processed.add(base_idx)
+        
+        if len(valid_group) > 1:
+            sources = set([base_article['source']])
+            max_inn = base_article.get('score_data', {}).get('innovation_score', 0)
+            max_tra = base_article.get('score_data', {}).get('traffic_score', 0)
+            justifications = [base_article.get('score_data', {}).get('justification', '')]
+            
+            for dup_idx in valid_group[1:]:
+                dup_art = sorted_articles[dup_idx]
+                processed.add(dup_idx)
+                sources.add(dup_art['source'])
+                ds = dup_art.get('score_data', {})
+                max_inn = max(max_inn, ds.get('innovation_score', 0))
+                max_tra = max(max_tra, ds.get('traffic_score', 0))
+                just = ds.get('justification', '')
+                if just and just not in justifications:
+                    justifications.append(just)
+                    
+            if len(sources) > 1:
+                max_tra = min(10.0, max_tra + (len(sources) - 1) * 0.5)
+                
+            if 'score_data' not in base_article:
+                base_article['score_data'] = {}
+                
+            base_article['source'] = ", ".join(sources)
+            base_article['score_data']['innovation_score'] = round(float(max_inn), 1)
+            base_article['score_data']['traffic_score'] = round(float(max_tra), 1)
+            base_article['score_data']['justification'] = " | ".join(justifications)
+            
+        final_articles.append(base_article)
+        
+    # Add back any articles that weren't included in any group
+    for i, a in enumerate(sorted_articles):
+        if i not in processed:
+            final_articles.append(a)
+            
+    return final_articles
+
+def pre_filter_articles_batch(articles_batch, config):
+    payload = []
+    for a in articles_batch:
+        payload.append({
+            "id": a["id"],
+            "title": a["title"],
+            "summary": a["summary"][:100]
+        })
+        
+    prompt = f"""
+    You are a fast content filter for a tech/VC radar. 
+    You will receive a list of articles. For each article, determine if it is relevant to Hardcore Tech, Investment, or cutting-edge innovation.
+    
+    Target Industries: {', '.join([ind['name'] for ind in config.get('industries', [])])}
+    
+    CRITICAL REJECTION RULES: Return is_relevant=false if the article is:
+    1. A news roundup/digest (e.g. "Morning brief", "晚报").
+    2. A shopping deal, discount, ad (e.g. "Black Friday", "Save $50", "促销").
+    3. Re-hashed old news or gossip.
+    
+    Input JSON:
+    {json.dumps(payload, ensure_ascii=False)}
+    
+    Return STRICTLY a JSON object matching this schema exactly:
+    {{
+      "results": [
+        {{"id": integer, "is_relevant": boolean}}
       ]
     }}
+    """
+    
+    result = _call_llm_with_fallback(prompt, config, title_context=f"Pre-filter Batch ({len(articles_batch)} items)")
+    return result
+
+def score_articles_batch(articles_batch, config):
+    payload = []
+    for a in articles_batch:
+        payload.append({
+            "id": a["id"],
+            "title": a["title"],
+            "summary": a["summary"][:300]
+        })
+        
+    prompt = f"""
+    You are an expert industry analyst and VC. Evaluate these tech news articles based on dual-track criteria.
+    
+    Target Industries: {', '.join([ind['name'] for ind in config.get('industries', [])])}
+    
+    Criteria:
+    {config.get('importance_criteria', '')}
     
     Input Articles JSON:
     {json.dumps(payload, ensure_ascii=False)}
+    
+    For EACH article in the input, provide:
+    1. 'innovation_score' (0.0-10.0, allows 1 decimal place)
+    2. 'traffic_score' (0.0-10.0, allows 1 decimal place)
+    3. 'justification': 1-sentence explanation of scores in {config.get('output', {}).get('language', 'Chinese')}
+    4. 'translated_title': Translate title to {config.get('output', {}).get('language', 'Chinese')}
+    5. 'translated_summary': HIGHLY CONDENSED summary (MAX 50 Chinese characters)
+    
+    Return STRICTLY a JSON object matching this schema exactly:
+    {{
+      "results": [
+        {{
+          "id": integer,
+          "is_relevant": true,
+          "innovation_score": number (e.g. 8.5),
+          "traffic_score": number (e.g. 8.5),
+          "justification": string,
+          "translated_title": string,
+          "translated_summary": string
+        }}
+      ]
+    }}
     """
     
-    result_json = _call_llm_with_fallback(prompt, config, title_context="Deduplication Phase")
+    result = _call_llm_with_fallback(prompt, config, title_context=f"Score Batch ({len(articles_batch)} items)")
     
-    if not result_json:
-        return articles
-
-    final_articles = []
-    
-    for ma in result_json.get("merged_articles", []):
-        final_articles.append({
-            "title": ma.get("translated_title", ""),
-            "summary": ma.get("translated_summary", ""),
-            "source": ma.get("source", ""),
-            "link": ma.get("link", ""),
-            "published_at": ma.get("published_at", ""), 
-            "score_data": {
-                "is_relevant": True,
-                "innovation_score": ma.get("innovation_score", 0),
-                "traffic_score": ma.get("traffic_score", 0),
-                "justification": ma.get("justification", ""),
-                "translated_title": ma.get("translated_title", ""),
-                "translated_summary": ma.get("translated_summary", "")
-            }
-        })
-    return final_articles
+    if result and "results" in result:
+        trusted_sources = config.get("trusted_sources", [])
+        for res_item in result["results"]:
+            # Find original article by id
+            a_id = res_item.get("id")
+            original_a = next((a for a in articles_batch if a["id"] == a_id), None)
+            if original_a and original_a.get("source") in trusted_sources:
+                # Boost innovation score for trusted sources
+                base_score = float(res_item.get("innovation_score", 0))
+                boosted = min(10.0, base_score + 1.0)
+                res_item["innovation_score"] = boosted
+                # Add a marker to the justification
+                res_item["justification"] = f"[🌟顶级信源加权] {res_item.get('justification', '')}"
+                
+    return result

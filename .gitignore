@@ -14,3 +14,7 @@ reports/
 test_*.py
 parse_pmset.py
 resend_report.py
+config.yaml
+article_cache.json
+*.db
+
